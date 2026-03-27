@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>take server</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0e0f11;
+    --surface:   #16181c;
+    --surface2:  #1e2026;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.12);
+    --text:      #f0f2f5;
+    --muted:     #7c8290;
+    --subtle:    #3a3d45;
+    --green:     #22c55e;
+    --green-bg:  rgba(34,197,94,0.1);
+    --green-bd:  rgba(34,197,94,0.25);
+    --red:       #ef4444;
+    --red-bg:    rgba(239,68,68,0.1);
+    --red-bd:    rgba(239,68,68,0.25);
+    --yellow:    #f59e0b;
+    --yellow-bg: rgba(245,158,11,0.1);
+    --yellow-bd: rgba(245,158,11,0.25);
+    --radius:    12px;
+    --radius-sm: 8px;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 20px 100px; }
+
+  /* Header */
+  header { margin-bottom: 48px; animation: fadeUp 0.5s ease both; }
+  .header-inner { display: flex; align-items: center; gap: 16px; }
+  .server-icon { width: 52px; height: 52px; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .header-text h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-text p  { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .refresh-pill { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: 5px 12px; flex-shrink: 0; }
+  .rdot { width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); flex-shrink: 0; }
+  .rdot.spin { background: none; border: 1.5px solid var(--muted); border-top-color: transparent; animation: spin 0.7s linear infinite; }
+  .refresh-btn { background: var(--surface2); border: 1px solid var(--border2); border-radius: 99px; color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 500; padding: 6px 16px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .refresh-btn:hover { background: var(--subtle); border-color: rgba(255,255,255,0.2); }
+  .refresh-btn:active { transform: scale(0.97); }
+  .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Status card */
+  .status-card { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 16px; border: 1px solid; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; animation: fadeUp 0.5s 0.05s ease both; transition: background 0.3s, border-color 0.3s; }
+  .status-card.online      { background: var(--green-bg);  border-color: var(--green-bd); }
+  .status-card.offline     { background: var(--red-bg);    border-color: var(--red-bd); }
+  .status-card.maintenance { background: var(--yellow-bg); border-color: var(--yellow-bd); }
+  .status-card.loading     { background: var(--surface);   border-color: var(--border); }
+
+  .status-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .online      .status-dot-lg { background: var(--green);  box-shadow: 0 0 0 4px var(--green-bg); animation: pulse 2s ease-in-out infinite; }
+  .offline     .status-dot-lg { background: var(--red); }
+  .maintenance .status-dot-lg { background: var(--yellow); }
+  .loading     .status-dot-lg { background: var(--subtle); animation: pulse 1.5s ease-in-out infinite; }
+
+  .status-label { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+  .online      .status-label { color: var(--green); }
+  .offline     .status-label { color: var(--red); }
+  .maintenance .status-label { color: var(--yellow); }
+  .loading     .status-label { color: var(--muted); }
+  .status-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .player-pill { background: rgba(255,255,255,0.05); border: 1px solid var(--border2); border-radius: 99px; padding: 8px 20px; text-align: center; flex-shrink: 0; }
+  .player-pill-num { font-size: 24px; font-weight: 600; color: var(--text); line-height: 1; font-family: var(--mono); }
+  .player-pill-label { font-size: 10px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.8px; }
+
+  /* Card base */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; animation: fadeUp 0.5s ease both; }
+  .card-header { padding: 13px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-header:not(.acc) { cursor: default; }
+  .section-title { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+  .card-meta { font-size: 12px; color: var(--muted); }
+
+  /* Players */
+  .players-list { padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .p-chip { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 13px 7px 9px; animation: fadeUp 0.25s ease both; transition: border-color 0.15s; }
+  .p-chip:hover { border-color: var(--border2); }
+  .p-face { width: 22px; height: 22px; border-radius: 4px; background: var(--subtle); overflow: hidden; flex-shrink: 0; }
+  .p-face img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+  .p-name { font-size: 13px; font-weight: 500; color: var(--text); font-family: var(--mono); }
+  .no-players { padding: 20px; font-size: 13px; color: var(--muted); text-align: center; }
+
+  /* Accordion (MOD) */
+  .acc { cursor: pointer; user-select: none; }
+  .acc:hover { background: rgba(255,255,255,0.03); }
+  .acc-arrow { font-size: 11px; color: var(--muted); transition: transform 0.22s; }
+  .acc-arrow.open { transform: rotate(180deg); }
+  .acc-body { overflow: hidden; max-height: 0; transition: max-height 0.3s ease; }
+  .acc-body.open { max-height: 800px; }
+
+  .mod-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid var(--border); gap: 12px; transition: background 0.1s; }
+  .mod-row:hover { background: rgba(255,255,255,0.02); }
+  .mod-name { font-size: 13px; font-weight: 500; color: var(--text); font-family: var(--mono); }
+  .mod-desc { font-size: 12px; color: var(--muted); }
+
+  /* 2col grid */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; animation: fadeUp 0.5s 0.15s ease both; }
+
+  /* Info rows */
+  .info-body { padding: 4px 0; }
+  .info-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; gap: 12px; transition: background 0.1s; }
+  .info-row:hover { background: rgba(255,255,255,0.02); }
+  .info-key { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+  .info-val { font-family: var(--mono); font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .copy-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-family: var(--mono); font-size: 10px; padding: 3px 9px; cursor: pointer; transition: all 0.15s; }
+  .copy-btn:hover { border-color: var(--border2); color: var(--text); }
+  .copy-btn.ok { color: var(--green); border-color: var(--green-bd); }
+
+  /* Links */
+  .links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; animation: fadeUp 0.5s 0.2s ease both; }
+  .link-card { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; text-decoration: none; color: var(--text); transition: border-color 0.15s, background 0.15s, transform 0.15s; }
+  .link-card:hover { border-color: var(--border2); background: var(--surface2); transform: translateY(-1px); }
+  .link-icon-wrap { width: 40px; height: 40px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .link-name { font-size: 14px; font-weight: 500; }
+  .link-sub  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .link-arrow { margin-left: auto; color: var(--subtle); flex-shrink: 0; }
+
+  footer { margin-top: 56px; text-align: center; font-size: 12px; color: var(--subtle); }
+
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes spin    { to{transform:rotate(360deg)} }
+  @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.45} }
+
+  @media (max-width: 520px) {
+    .two-col    { grid-template-columns: 1fr; }
+    .links-grid { grid-template-columns: 1fr; }
+    .status-card { grid-template-columns: auto 1fr; }
+    .player-pill { display: none; }
+    .refresh-pill { margin-left: 0; }
+    .header-inner { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <div class="server-icon">⛏️</div>
+      <div class="header-text">
+        <h1>take server</h1>
+        <p>Fabric 1.21.1 &nbsp;·&nbsp; Java &amp; 統合版対応</p>
+      </div>
+      <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">↻ 更新</button>
+      <div class="refresh-pill">
+        <div class="rdot" id="rdot"></div>
+        <span id="rlabel">読込中</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Status -->
+  <div class="status-card loading" id="statusCard">
+    <div class="status-dot-lg"></div>
+    <div>
+      <div class="status-label" id="slabel">確認中...</div>
+      <div class="status-desc"  id="sdesc">サーバー状態を取得しています</div>
+    </div>
+    <div class="player-pill" id="playerPill" style="display:none">
+      <div class="player-pill-num" id="playerNum">0</div>
+      <div class="player-pill-label">players</div>
+    </div>
+  </div>
+
+  <!-- Players -->
+  <div class="card" id="playersCard" style="display:none">
+    <div class="card-header">
+      <span class="section-title">現在のプレイヤー</span>
+      <span class="card-meta" id="playerCountLabel">0人</span>
+    </div>
+    <div class="players-list" id="playersList"></div>
+  </div>
+
+  <!-- 接続情報 + MOD (2col) -->
+  <div class="two-col">
+
+    <!-- 接続情報 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-header">
+        <span class="section-title">接続情報</span>
+      </div>
+      <div class="info-body">
+        <div class="info-row">
+          <span class="info-key">Java版</span>
+          <span class="info-val">60.125.220.147 <button class="copy-btn" onclick="cp('60.125.220.147',this)">copy</button></span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Javaポート</span>
+          <span class="info-val">25565</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">統合版</span>
+          <span class="info-val">60.125.220.147 <button class="copy-btn" onclick="cp('60.125.220.147',this)">copy</button></span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">統合版ポート</span>
+          <span class="info-val">19132 <button class="copy-btn" onclick="cp('19132',this)">copy</button></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOD アコーディオン -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-header acc" onclick="toggleMod(this)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="section-title">導入MOD</span>
+          <span class="card-meta" id="modCount">10個</span>
+        </div>
+        <span class="acc-arrow" id="modArrow">▼</span>
+      </div>
+      <div class="acc-body" id="modBody">
+        <div class="mod-row"><span class="mod-name">Geyser+Floodgate</span><span class="mod-desc">統合版対応</span></div>
+        <div class="mod-row"><span class="mod-name">BlueMap</span><span class="mod-desc">3Dマップ</span></div>
+        <div class="mod-row"><span class="mod-name">Lithium</span><span class="mod-desc">全般最適化</span></div>
+        <div class="mod-row"><span class="mod-name">Krypton</span><span class="mod-desc">通信最適化</span></div>
+        <div class="mod-row"><span class="mod-name">ferritecore</span><span class="mod-desc">メモリ最適化</span></div>
+        <div class="mod-row"><span class="mod-name">ServerCore</span><span class="mod-desc">性能設定</span></div>
+        <div class="mod-row"><span class="mod-name">fabric-carpet</span><span class="mod-desc">便利機能</span></div>
+        <div class="mod-row"><span class="mod-name">styled-nicknames</span><span class="mod-desc">ニックネーム</span></div>
+        <div class="mod-row"><span class="mod-name">Chunky</span><span class="mod-desc">チャンク生成</span></div>
+        <div class="mod-row"><span class="mod-name">NotifMod</span><span class="mod-desc">通知機能</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Links -->
+  <div class="links-grid">
+    <a class="link-card" href="https://minecraftinvite.netlify.app" target="_blank">
+      <div class="link-icon-wrap">📨</div>
+      <div>
+        <div class="link-name">招待サイト</div>
+        <div class="link-sub">参加方法はこちら</div>
+      </div>
+      <span class="link-arrow">→</span>
+    </a>
+    <a class="link-card" href="https://minecraft-wordmap.netlify.app" target="_blank">
+      <div class="link-icon-wrap">🗺️</div>
+      <div>
+        <div class="link-name">マップサイト</div>
+        <div class="link-sub">3Dワールドマップ</div>
+      </div>
+      <span class="link-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>take server &nbsp;·&nbsp; have fun ⚒️</footer>
+</div>
+
+<script>
+const IP          = '60.125.220.147';
+const PORT        = 25565;
+const STATUS_JSON = './status.json';
+const INTERVAL    = 30000;
+
+const card    = document.getElementById('statusCard');
+const slabel  = document.getElementById('slabel');
+const sdesc   = document.getElementById('sdesc');
+const pill    = document.getElementById('playerPill');
+const pnum    = document.getElementById('playerNum');
+const pCard   = document.getElementById('playersCard');
+const pList   = document.getElementById('playersList');
+const pLabel  = document.getElementById('playerCountLabel');
+const rdot    = document.getElementById('rdot');
+const rlabel  = document.getElementById('rlabel');
+
+function applyStatus(mode, count, players) {
+  card.className = 'status-card ' + mode;
+
+  if (mode === 'online') {
+    slabel.textContent = 'オンライン';
+    sdesc.textContent  = 'サーバーは稼働中です';
+    pill.style.display = 'block';
+    pnum.textContent   = count;
+    pCard.style.display = 'block';
+    pLabel.textContent  = count + '人';
+    pList.innerHTML = '';
+    if (players.length > 0) {
+      players.forEach((name, i) => {
+        const el = document.createElement('div');
+        el.className = 'p-chip';
+        el.style.animationDelay = (i * 0.05) + 's';
+        el.innerHTML = `
+          <div class="p-face">
+            <img src="https://mc-heads.net/avatar/${encodeURIComponent(name)}/22"
+                 onerror="this.parentElement.innerHTML='?'" alt="">
+          </div>
+          <span class="p-name">${name}</span>`;
+        pList.appendChild(el);
+      });
+    } else {
+      pList.innerHTML = '<p class="no-players">現在プレイヤーはいません</p>';
+    }
+  } else if (mode === 'maintenance') {
+    slabel.textContent  = 'メンテナンス中';
+    sdesc.textContent   = 'しばらくお待ちください';
+    pill.style.display  = 'none';
+    pCard.style.display = 'none';
+  } else {
+    slabel.textContent  = 'オフライン';
+    sdesc.textContent   = '現在サーバーは停止しています';
+    pill.style.display  = 'none';
+    pCard.style.display = 'none';
+  }
+}
+
+async function getMaintenance() {
+  try {
+    const r = await fetch(STATUS_JSON + '?_=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return false;
+    return !!(await r.json()).maintenance;
+  } catch { return false; }
+}
+
+async function getMCStatus() {
+  const r = await fetch(`https://api.mcstatus.io/v2/status/java/${IP}:${PORT}`);
+  if (!r.ok) throw new Error();
+  return r.json();
+}
+
+async function refresh() {
+  rdot.className = 'rdot spin';
+  rlabel.textContent = '更新中';
+  try {
+    if (await getMaintenance()) {
+      applyStatus('maintenance', 0, []);
+      done('メンテナンス');
+      return;
+    }
+    const d = await getMCStatus();
+    if (!d.online) { applyStatus('offline', 0, []); done('オフライン'); return; }
+    const count   = d.players?.online ?? 0;
+    const players = (d.players?.list ?? []).map(p => p.name_clean || p.name).filter(Boolean);
+    applyStatus('online', count, players);
+    done(count + '人プレイ中');
+  } catch {
+    applyStatus('offline', 0, []);
+    done('取得失敗');
+  }
+}
+
+function done(msg) {
+  rdot.className = 'rdot';
+  const t = new Date();
+  rlabel.textContent = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0') + ' ' + msg;
+}
+
+function toggleMod(header) {
+  const body  = document.getElementById('modBody');
+  const arrow = document.getElementById('modArrow');
+  const open  = body.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+}
+
+function cp(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const o = btn.textContent;
+    btn.textContent = '✓';
+    btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = o; btn.classList.remove('ok'); }, 1500);
+  });
+}
+
+const refreshBtn = document.getElementById('refreshBtn');
+
+function manualRefresh() {
+  refreshBtn.disabled = true;
+  refresh().finally(() => {
+    setTimeout(() => { refreshBtn.disabled = false; }, 2000);
+  });
+}
+
+refresh();
+setInterval(refresh, INTERVAL);
+</script>
+</body>
+</html>
