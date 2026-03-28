@@ -131,6 +131,48 @@
   .link-sub  { font-size: 12px; color: var(--muted); margin-top: 1px; }
   .link-arrow { margin-left: auto; color: var(--subtle); flex-shrink: 0; }
 
+  /* ── 起動リクエストカード ── */
+  .start-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    animation: fadeUp 0.5s 0.1s ease both;
+  }
+  .start-card-text {}
+  .start-card-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+  .start-card-desc  { font-size: 12px; color: var(--muted); }
+  .start-btn {
+    flex-shrink: 0;
+    background: var(--green-bg);
+    border: 1px solid var(--green-bd);
+    border-radius: var(--radius-sm);
+    color: var(--green);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .start-btn:hover:not(:disabled) { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.4); }
+  .start-btn:active:not(:disabled) { transform: scale(0.97); }
+  .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .start-btn.loading { color: var(--muted); border-color: var(--border); background: var(--surface2); }
+  .start-btn.sent    { color: var(--green); border-color: var(--green-bd); background: var(--green-bg); }
+  .start-btn.error   { color: var(--red);   border-color: var(--red-bd);   background: var(--red-bg); }
+  .start-btn.cooldown { color: var(--yellow); border-color: var(--yellow-bd); background: var(--yellow-bg); }
+  .start-msg { font-size: 11px; color: var(--muted); margin-top: 6px; font-family: var(--mono); min-height: 16px; }
+  .start-msg.ok   { color: var(--green); }
+  .start-msg.warn { color: var(--yellow); }
+  .start-msg.err  { color: var(--red); }
+
   footer { margin-top: 56px; text-align: center; font-size: 12px; color: var(--subtle); }
 
   @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
@@ -144,6 +186,8 @@
     .player-pill { display: none; }
     .refresh-pill { margin-left: 0; }
     .header-inner { flex-wrap: wrap; }
+    .start-card { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .start-btn { width: 100%; }
   }
 </style>
 </head>
@@ -177,6 +221,16 @@
       <div class="player-pill-num" id="playerNum">0</div>
       <div class="player-pill-label">players</div>
     </div>
+  </div>
+
+  <!-- 起動リクエストカード（オフライン時のみ表示） -->
+  <div class="start-card" id="startCard" style="display:none">
+    <div class="start-card-text">
+      <div class="start-card-title">サーバーを起動する</div>
+      <div class="start-card-desc">リクエストから 1〜2 分で接続できます</div>
+      <div class="start-msg" id="startMsg"></div>
+    </div>
+    <button class="start-btn" id="startBtn" onclick="requestStart()">▶ 起動リクエスト</button>
   </div>
 
   <!-- Players -->
@@ -267,8 +321,10 @@
 <script>
 const IP          = '60.125.220.147';
 const PORT        = 25565;
+const API_URL     = 'http://60.125.220.147:8080';
 const STATUS_JSON = './status.json';
 const INTERVAL    = 30000;
+const COOLDOWN_MS = 5 * 60 * 1000; // 5分
 
 const card    = document.getElementById('statusCard');
 const slabel  = document.getElementById('slabel');
@@ -280,9 +336,22 @@ const pList   = document.getElementById('playersList');
 const pLabel  = document.getElementById('playerCountLabel');
 const rdot    = document.getElementById('rdot');
 const rlabel  = document.getElementById('rlabel');
+const startCard = document.getElementById('startCard');
+const startBtn  = document.getElementById('startBtn');
+const startMsg  = document.getElementById('startMsg');
+
+// クールタイム復元（ページリロード時）
+let cooldownTimer = null;
+const savedCooldown = localStorage.getItem('startCooldownUntil');
+if (savedCooldown && Date.now() < Number(savedCooldown)) {
+  startCooldownUI(Number(savedCooldown) - Date.now());
+}
 
 function applyStatus(mode, count, players) {
   card.className = 'status-card ' + mode;
+
+  // 起動リクエストカード: オフライン時のみ表示
+  startCard.style.display = (mode === 'offline') ? 'flex' : 'none';
 
   if (mode === 'online') {
     slabel.textContent = 'オンライン';
@@ -362,6 +431,82 @@ function done(msg) {
   rlabel.textContent = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0') + ' ' + msg;
 }
 
+// ── 起動リクエスト ──────────────────────────
+async function requestStart() {
+  startBtn.disabled = true;
+  startBtn.className = 'start-btn loading';
+  startBtn.textContent = '送信中...';
+  startMsg.className = 'start-msg';
+  startMsg.textContent = '';
+
+  try {
+    const res = await fetch(API_URL + '/start', { method: 'POST' });
+    const data = await res.json();
+
+    if (res.ok) {
+      startBtn.className = 'start-btn sent';
+      startBtn.textContent = '✓ リクエスト済み';
+      startMsg.className = 'start-msg ok';
+      startMsg.textContent = '起動中です。1〜2分後に接続してください。';
+      // クールタイム開始
+      const until = Date.now() + COOLDOWN_MS;
+      localStorage.setItem('startCooldownUntil', until);
+      startCooldownUI(COOLDOWN_MS);
+    } else if (res.status === 409) {
+      startBtn.disabled = false;
+      startBtn.className = 'start-btn';
+      startBtn.textContent = '▶ 起動リクエスト';
+      startMsg.className = 'start-msg warn';
+      startMsg.textContent = data.detail;
+    } else if (res.status === 429) {
+      startBtn.className = 'start-btn cooldown';
+      startBtn.textContent = '⏳ クールタイム中';
+      startMsg.className = 'start-msg warn';
+      startMsg.textContent = data.detail;
+      startCooldownUI(COOLDOWN_MS);
+    } else {
+      throw new Error(data.detail || '不明なエラー');
+    }
+  } catch (e) {
+    startBtn.disabled = false;
+    startBtn.className = 'start-btn error';
+    startBtn.textContent = '接続失敗 — 再試行';
+    startMsg.className = 'start-msg err';
+    startMsg.textContent = '管理PCに接続できませんでした。PCが起動中か確認してください。';
+    setTimeout(() => {
+      startBtn.className = 'start-btn';
+      startBtn.textContent = '▶ 起動リクエスト';
+      startMsg.textContent = '';
+    }, 4000);
+  }
+}
+
+function startCooldownUI(remainMs) {
+  startBtn.disabled = true;
+  startBtn.className = 'start-btn cooldown';
+  if (cooldownTimer) clearInterval(cooldownTimer);
+
+  function tick() {
+    const left = Number(localStorage.getItem('startCooldownUntil')) - Date.now();
+    if (left <= 0) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      localStorage.removeItem('startCooldownUntil');
+      startBtn.disabled = false;
+      startBtn.className = 'start-btn';
+      startBtn.textContent = '▶ 起動リクエスト';
+      startMsg.textContent = '';
+      return;
+    }
+    const m = Math.floor(left / 60000);
+    const s = Math.floor((left % 60000) / 1000);
+    startBtn.textContent = `⏳ ${m}:${s.toString().padStart(2,'0')} 後に再リクエスト可`;
+  }
+  tick();
+  cooldownTimer = setInterval(tick, 1000);
+}
+
+// ── その他ユーティリティ ────────────────────
 function toggleMod(header) {
   const body  = document.getElementById('modBody');
   const arrow = document.getElementById('modArrow');
